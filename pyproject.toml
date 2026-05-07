@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "healthstatus"
+version = "0.1.0"
+description = "Live TUI dashboard for your machine's health (CPU, memory, disk, network, battery, processes)."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "Emil" }]
+dependencies = [
+    "psutil>=5.9",
+    "rich>=13.7",
+]
+
+[project.scripts]
+healthstatus = "healthstatus.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["healthstatus*"]
