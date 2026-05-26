@@ -1,0 +1,15 @@
+[package]
+name = "healthstatus"
+version = "0.1.0"
+edition = "2021"
+description = "Live terminal dashboard for machine health."
+license = "MIT"
+
+[[bin]]
+name = "healthstatus"
+path = "src/main.rs"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
