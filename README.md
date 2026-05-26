@@ -56,13 +56,9 @@ q      Quit
 
 ## Screenshots
 
-Screenshots/GIFs should live in `docs/` or `assets/` and be linked here once
-captured:
+![healthstatus status dashboard](docs/status.svg)
 
-```md
-![healthstatus status view](docs/status.png)
-![healthstatus sensors view](docs/sensors.png)
-```
+![healthstatus sensors dashboard](docs/sensors.svg)
 
 ## WSL notes
 
