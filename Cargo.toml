@@ -9,6 +9,10 @@ repository = "https://github.com/emilindqvist/healthstatus"
 keywords = ["cli", "terminal", "monitoring", "system", "wsl"]
 categories = ["command-line-utilities"]
 
+[dependencies]
+crossterm = "0.28"
+ratatui = "0.29"
+
 [[bin]]
 name = "healthstatus"
 path = "src/main.rs"
