@@ -60,7 +60,6 @@ q      Quit
 
 ![healthstatus sensors dashboard](docs/sensors.svg)
 
-Screenshots use anonymized sample data.
 
 ## WSL notes
 
