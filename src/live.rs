@@ -1,4 +1,6 @@
 use std::io;
+use std::sync::mpsc;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use crossterm::{
@@ -19,6 +21,9 @@ use crate::collectors::{
     collect_all, gpu_telemetry, system_details, GpuTelemetry, Metrics, NetSnapshot, SystemDetails,
 };
 use crate::{fmt_bytes, fmt_duration};
+
+const DETAILS_TTL: Duration = Duration::from_secs(15);
+const GPU_TTL: Duration = Duration::from_secs(3);
 
 pub fn run(interval: f64) {
     if let Err(err) = run_tui(Duration::from_secs_f64(interval)) {
@@ -48,34 +53,64 @@ fn run_app(
 ) -> io::Result<()> {
     let mut page = Page::Status;
     let mut prev_net: Option<NetSnapshot> = None;
+    let mut data = collect_all(&mut prev_net);
     let mut cached_details: Option<SystemDetails> = None;
     let mut details_fetched = Instant::now() - Duration::from_secs(60);
+    let mut details_pending = false;
+    let (details_tx, details_rx) = mpsc::channel::<SystemDetails>();
+    let mut cached_gpu: Option<GpuTelemetry> = None;
+    let mut gpu_fetched = Instant::now() - Duration::from_secs(60);
+    let mut gpu_pending = false;
+    let (gpu_tx, gpu_rx) = mpsc::channel::<GpuTelemetry>();
+    let mut next_refresh = Instant::now();
+    let poll_rate = Duration::from_millis(50);
 
     loop {
-        let data = collect_all(&mut prev_net);
-        let gpu = if page == Page::Sensors {
-            Some(gpu_telemetry())
-        } else {
-            None
-        };
-        if page == Page::Details
-            && (cached_details.is_none() || details_fetched.elapsed() > Duration::from_secs(15))
-        {
-            cached_details = Some(system_details());
+        while let Ok(details) = details_rx.try_recv() {
+            cached_details = Some(details);
             details_fetched = Instant::now();
+            details_pending = false;
+        }
+        while let Ok(gpu) = gpu_rx.try_recv() {
+            cached_gpu = Some(gpu);
+            gpu_fetched = Instant::now();
+            gpu_pending = false;
+        }
+
+        if next_refresh <= Instant::now() {
+            data = collect_all(&mut prev_net);
+            next_refresh = Instant::now() + interval;
+        }
+
+        if page == Page::Details
+            && !details_pending
+            && (cached_details.is_none() || details_fetched.elapsed() > DETAILS_TTL)
+        {
+            details_pending = true;
+            let tx = details_tx.clone();
+            thread::spawn(move || {
+                let _ = tx.send(system_details());
+            });
+        }
+
+        if page == Page::Sensors
+            && !gpu_pending
+            && (cached_gpu.is_none() || gpu_fetched.elapsed() > GPU_TTL)
+        {
+            gpu_pending = true;
+            let tx = gpu_tx.clone();
+            thread::spawn(move || {
+                let _ = tx.send(gpu_telemetry());
+            });
         }
 
         terminal.draw(|frame| match page {
             Page::Status => draw_status(frame, &data),
-            Page::Details => draw_details(
-                frame,
-                &data,
-                cached_details.as_ref().expect("details cached"),
-            ),
-            Page::Sensors => draw_sensors(frame, &data, gpu.as_ref().expect("gpu fetched")),
+            Page::Details => draw_details(frame, &data, cached_details.as_ref(), details_pending),
+            Page::Sensors => draw_sensors(frame, &data, cached_gpu.as_ref(), gpu_pending),
         })?;
 
-        if event::poll(interval)? {
+        if event::poll(poll_rate)? {
             if let Event::Key(key) = event::read()? {
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
@@ -149,7 +184,12 @@ fn draw_status(frame: &mut Frame<'_>, data: &Metrics) {
     draw_footer(frame, rows[4]);
 }
 
-fn draw_details(frame: &mut Frame<'_>, data: &Metrics, details: &SystemDetails) {
+fn draw_details(
+    frame: &mut Frame<'_>,
+    data: &Metrics,
+    details: Option<&SystemDetails>,
+    pending: bool,
+) {
     let area = frame.area();
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -161,6 +201,12 @@ fn draw_details(frame: &mut Frame<'_>, data: &Metrics, details: &SystemDetails) 
         ])
         .split(area);
     draw_top_bar(frame, rows[0], data, "Details", 2);
+    let Some(details) = details else {
+        draw_loading(frame, rows[1], "Host", pending);
+        draw_loading(frame, rows[2], "Wi-Fi", pending);
+        draw_footer(frame, rows[3]);
+        return;
+    };
 
     let host_rows = vec![
         row_pair("Distro", details.distro.as_deref().unwrap_or("-")),
@@ -204,7 +250,7 @@ fn draw_details(frame: &mut Frame<'_>, data: &Metrics, details: &SystemDetails) 
     draw_footer(frame, rows[3]);
 }
 
-fn draw_sensors(frame: &mut Frame<'_>, data: &Metrics, gpu: &GpuTelemetry) {
+fn draw_sensors(frame: &mut Frame<'_>, data: &Metrics, gpu: Option<&GpuTelemetry>, pending: bool) {
     let area = frame.area();
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -221,9 +267,14 @@ fn draw_sensors(frame: &mut Frame<'_>, data: &Metrics, gpu: &GpuTelemetry) {
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(62), Constraint::Percentage(38)])
         .split(rows[1]);
-    draw_gpu(frame, top[0], gpu);
+    if let Some(gpu) = gpu {
+        draw_gpu(frame, top[0], gpu);
+        draw_gpu_processes(frame, rows[2], gpu);
+    } else {
+        draw_loading(frame, top[0], "GPU", pending);
+        draw_loading(frame, rows[2], "GPU processes", pending);
+    }
     draw_temperatures(frame, top[1], data);
-    draw_gpu_processes(frame, rows[2], gpu);
     draw_footer(frame, rows[3]);
 }
 
@@ -522,6 +573,20 @@ fn draw_gpu_processes(frame: &mut Frame<'_>, area: Rect, gpu: &GpuTelemetry) {
         )
         .header(Row::new(vec!["pid", "process", "vram"]).style(Style::new().fg(Color::Cyan)))
         .block(panel("GPU processes", Color::Cyan)),
+        area,
+    );
+}
+
+fn draw_loading(frame: &mut Frame<'_>, area: Rect, title: &str, pending: bool) {
+    let text = if pending {
+        "loading cached data..."
+    } else {
+        "waiting for data..."
+    };
+    frame.render_widget(
+        Paragraph::new(text)
+            .style(Style::new().fg(Color::DarkGray))
+            .block(panel(title, Color::DarkGray)),
         area,
     );
 }
