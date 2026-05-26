@@ -36,6 +36,16 @@ cargo test
 Package name: `healthstatus`  
 Command name: `healthstatus`
 
+## Dependencies
+
+- Rust and Cargo are required to install from crates.io or source.
+- Rust crate dependencies are resolved automatically by Cargo.
+- Disk usage is read with `df` when available.
+- NVIDIA GPU telemetry is optional and requires `nvidia-smi` or
+  `nvidia-smi.exe` on `PATH`.
+- On WSL, battery, Windows system details, and Wi-Fi details are optional and
+  use `powershell.exe` and `netsh.exe` when available.
+
 ## Use
 
 ```bash
