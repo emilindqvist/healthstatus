@@ -1,4 +1,5 @@
 use std::io;
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -20,18 +21,19 @@ use ratatui::{
 use crate::collectors::{
     collect_all, gpu_telemetry, system_details, GpuTelemetry, Metrics, NetSnapshot, SystemDetails,
 };
+use crate::logging::CsvLogger;
 use crate::{fmt_bytes, fmt_duration};
 
 const DETAILS_TTL: Duration = Duration::from_secs(15);
 const GPU_TTL: Duration = Duration::from_secs(3);
 
-pub fn run(interval: f64) {
-    if let Err(err) = run_tui(Duration::from_secs_f64(interval)) {
+pub fn run(interval: f64, log_path: Option<PathBuf>) {
+    if let Err(err) = run_tui(Duration::from_secs_f64(interval), log_path) {
         eprintln!("healthstatus: {err}");
     }
 }
 
-fn run_tui(interval: Duration) -> io::Result<()> {
+fn run_tui(interval: Duration, log_path: Option<PathBuf>) -> io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
@@ -39,7 +41,7 @@ fn run_tui(interval: Duration) -> io::Result<()> {
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
 
-    let result = run_app(&mut terminal, interval);
+    let result = run_app(&mut terminal, interval, log_path);
 
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -50,10 +52,16 @@ fn run_tui(interval: Duration) -> io::Result<()> {
 fn run_app(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     interval: Duration,
+    log_path: Option<PathBuf>,
 ) -> io::Result<()> {
     let mut page = Page::Status;
     let mut prev_net: Option<NetSnapshot> = None;
     let mut data = collect_all(&mut prev_net);
+    let mut logger = match log_path {
+        Some(path) => Some(CsvLogger::open(path)?),
+        None => None,
+    };
+    let mut log_error: Option<String> = None;
     let mut cached_details: Option<SystemDetails> = None;
     let mut details_fetched = Instant::now() - Duration::from_secs(60);
     let mut details_pending = false;
@@ -79,6 +87,11 @@ fn run_app(
 
         if next_refresh <= Instant::now() {
             data = collect_all(&mut prev_net);
+            if let Some(logger) = &mut logger {
+                if let Err(err) = logger.write_sample(&data) {
+                    log_error = Some(format!("log write failed: {err}"));
+                }
+            }
             next_refresh = Instant::now() + interval;
         }
 
@@ -105,9 +118,21 @@ fn run_app(
         }
 
         terminal.draw(|frame| match page {
-            Page::Status => draw_status(frame, &data),
-            Page::Details => draw_details(frame, &data, cached_details.as_ref(), details_pending),
-            Page::Sensors => draw_sensors(frame, &data, cached_gpu.as_ref(), gpu_pending),
+            Page::Status => draw_status(frame, &data, log_error.as_deref()),
+            Page::Details => draw_details(
+                frame,
+                &data,
+                cached_details.as_ref(),
+                details_pending,
+                log_error.as_deref(),
+            ),
+            Page::Sensors => draw_sensors(
+                frame,
+                &data,
+                cached_gpu.as_ref(),
+                gpu_pending,
+                log_error.as_deref(),
+            ),
         })?;
 
         if event::poll(poll_rate)? {
@@ -145,7 +170,7 @@ impl Page {
     }
 }
 
-fn draw_status(frame: &mut Frame<'_>, data: &Metrics) {
+fn draw_status(frame: &mut Frame<'_>, data: &Metrics, log_error: Option<&str>) {
     let area = frame.area();
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -181,7 +206,7 @@ fn draw_status(frame: &mut Frame<'_>, data: &Metrics) {
     draw_network(frame, bottom[0], data);
     draw_processes(frame, bottom[1], data);
 
-    draw_footer(frame, rows[4]);
+    draw_footer(frame, rows[4], log_error);
 }
 
 fn draw_details(
@@ -189,6 +214,7 @@ fn draw_details(
     data: &Metrics,
     details: Option<&SystemDetails>,
     pending: bool,
+    log_error: Option<&str>,
 ) {
     let area = frame.area();
     let rows = Layout::default()
@@ -204,7 +230,7 @@ fn draw_details(
     let Some(details) = details else {
         draw_loading(frame, rows[1], "Host", pending);
         draw_loading(frame, rows[2], "Wi-Fi", pending);
-        draw_footer(frame, rows[3]);
+        draw_footer(frame, rows[3], log_error);
         return;
     };
 
@@ -247,10 +273,16 @@ fn draw_details(
             .column_spacing(2),
         rows[2],
     );
-    draw_footer(frame, rows[3]);
+    draw_footer(frame, rows[3], log_error);
 }
 
-fn draw_sensors(frame: &mut Frame<'_>, data: &Metrics, gpu: Option<&GpuTelemetry>, pending: bool) {
+fn draw_sensors(
+    frame: &mut Frame<'_>,
+    data: &Metrics,
+    gpu: Option<&GpuTelemetry>,
+    pending: bool,
+    log_error: Option<&str>,
+) {
     let area = frame.area();
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -275,11 +307,12 @@ fn draw_sensors(frame: &mut Frame<'_>, data: &Metrics, gpu: Option<&GpuTelemetry
         draw_loading(frame, rows[2], "GPU processes", pending);
     }
     draw_temperatures(frame, top[1], data);
-    draw_footer(frame, rows[3]);
+    draw_footer(frame, rows[3], log_error);
 }
 
 fn draw_top_bar(frame: &mut Frame<'_>, area: Rect, data: &Metrics, page: &str, page_num: u8) {
-    let text = Line::from(vec![
+    let warnings = crate::alerts::warnings(data);
+    let mut spans = vec![
         Span::styled(
             "healthstatus",
             Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
@@ -292,23 +325,36 @@ fn draw_top_bar(frame: &mut Frame<'_>, area: Rect, data: &Metrics, page: &str, p
             data.host.arch,
             fmt_duration(data.host.uptime_s)
         )),
-    ]);
+    ];
+    if !warnings.is_empty() {
+        spans.push(Span::styled(
+            format!("  WARN {}", warnings.join(" | ")),
+            Style::new().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ));
+    }
+    let text = Line::from(spans);
     frame.render_widget(Paragraph::new(text).block(panel("", Color::White)), area);
 }
 
-fn draw_footer(frame: &mut Frame<'_>, area: Rect) {
-    let text = Line::from(vec![
-        Span::styled("[1]", Style::new().fg(Color::Cyan)),
-        Span::raw(" Status   "),
-        Span::styled("[2]", Style::new().fg(Color::Cyan)),
-        Span::raw(" Details   "),
-        Span::styled("[3]", Style::new().fg(Color::Cyan)),
-        Span::raw(" Sensors   "),
-        Span::styled("[tab]", Style::new().fg(Color::Cyan)),
-        Span::raw(" next   "),
-        Span::styled("[q]", Style::new().fg(Color::Cyan)),
-        Span::raw(" quit"),
-    ]);
+fn draw_footer(frame: &mut Frame<'_>, area: Rect, log_error: Option<&str>) {
+    let text = match log_error {
+        Some(error) => Line::from(vec![Span::styled(
+            error.to_string(),
+            Style::new().fg(Color::Red),
+        )]),
+        None => Line::from(vec![
+            Span::styled("[1]", Style::new().fg(Color::Cyan)),
+            Span::raw(" Status   "),
+            Span::styled("[2]", Style::new().fg(Color::Cyan)),
+            Span::raw(" Details   "),
+            Span::styled("[3]", Style::new().fg(Color::Cyan)),
+            Span::raw(" Sensors   "),
+            Span::styled("[tab]", Style::new().fg(Color::Cyan)),
+            Span::raw(" next   "),
+            Span::styled("[q]", Style::new().fg(Color::Cyan)),
+            Span::raw(" quit"),
+        ]),
+    };
     frame.render_widget(Paragraph::new(text).block(panel("", Color::White)), area);
 }
 

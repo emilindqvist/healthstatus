@@ -4,6 +4,10 @@ use crate::{fmt_bytes, fmt_duration, json_escape};
 pub fn render_status(data: &Metrics) -> String {
     let mut out = String::new();
     out.push_str(&header(data, "Status", 1));
+    let warnings = render_warnings(data);
+    if !warnings.is_empty() {
+        out.push_str(&section("Warnings", &warnings));
+    }
     out.push_str(&section("CPU", &render_cpu(data)));
     out.push_str(&section("Memory", &render_memory(data)));
     out.push_str(&section("Disks", &render_disks(data)));
@@ -196,6 +200,15 @@ pub fn render_json(data: &Metrics, include_details: bool, include_sensors: bool)
         ));
     }
     format!("{{{}}}", parts.join(","))
+}
+
+fn render_warnings(data: &Metrics) -> String {
+    let warnings = crate::alerts::warnings(data);
+    if warnings.is_empty() {
+        String::new()
+    } else {
+        format!("WARN {}\n", warnings.join(" | "))
+    }
 }
 
 fn render_cpu(data: &Metrics) -> String {

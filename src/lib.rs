@@ -1,5 +1,7 @@
+pub mod alerts;
 pub mod collectors;
 pub mod live;
+pub mod logging;
 pub mod render;
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};

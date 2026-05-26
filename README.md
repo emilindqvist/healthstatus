@@ -1,9 +1,15 @@
 # healthstatus
 
+[![CI](https://github.com/emilindqvist/healthstatus/actions/workflows/ci.yml/badge.svg)](https://github.com/emilindqvist/healthstatus/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/healthstatus.svg)](https://crates.io/crates/healthstatus)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Live terminal dashboard for machine health, now implemented in Rust.
 
 It shows CPU, memory, disk, network, uptime, battery, top processes, system
 details, and NVIDIA GPU telemetry from a single `healthstatus` command.
+CPU, memory, disk, and temperature warnings are highlighted when they cross
+high-usage thresholds.
 
 ## Install
 
@@ -24,6 +30,16 @@ From a local checkout:
 ```bash
 cargo install --path .
 ```
+
+Update an existing install:
+
+```bash
+cargo install healthstatus --force
+cargo install --git https://github.com/emilindqvist/healthstatus.git --force
+```
+
+`cargo update healthstatus` updates dependency versions in another Cargo
+project; it does not update an installed `healthstatus` command.
 
 For local development:
 
@@ -57,6 +73,7 @@ healthstatus --json              # raw metrics as JSON
 healthstatus --json --details    # include system details in JSON
 healthstatus --json --sensors    # include GPU telemetry in JSON
 healthstatus --interval 0.5      # refresh every 0.5s
+healthstatus --log metrics.csv   # append sampled metrics to a CSV file
 healthstatus --version           # print version
 ```
 
@@ -69,6 +86,24 @@ Live mode keys:
 tab    Next page
 q      Quit
 ```
+
+## Metrics
+
+- CPU shows current total CPU utilization. In WSL, this reflects the WSL2 VM.
+- Memory shows used and total RAM as reported by the host environment.
+- Disk shows mounted filesystem usage when `df` is available.
+- Network shows receive/transmit rates calculated between samples.
+- Uptime is read from the operating system uptime source.
+- Battery reports charge and charging state when battery data is available.
+- Top processes are ranked by sampled CPU and memory usage.
+- Details shows operating system, CPU, board, BIOS, Wi-Fi, and Windows host
+  details when the platform exposes them.
+- Sensors shows NVIDIA GPU temperature, utilization, memory, power, clocks, and
+  fan telemetry when `nvidia-smi` is available.
+- `--log <FILE>` appends CSV samples with CPU, memory, swap, disk, network, and
+  battery metrics. In live mode it writes one row per refresh interval.
+- Warnings are emitted for CPU, RAM, disks, and temperatures at high-usage
+  thresholds.
 
 ## Screenshots
 
@@ -88,6 +123,28 @@ q      Quit
   `nvidia-smi.exe` on `PATH`.
 - CPU/board temperatures are best-effort from Linux thermal sysfs and are often
   unavailable inside WSL.
+
+## Architecture
+
+- `src/main.rs` parses CLI arguments and routes commands.
+- `src/collectors.rs` gathers metrics from Linux, WSL, Windows helper tools,
+  and GPU tools.
+- `src/render.rs` formats status, details, sensors, and JSON output.
+- `src/live.rs` runs the interactive terminal dashboard.
+- `tests/` contains integration tests for formatting and parser behavior.
+
+## Roadmap
+
+- Evaluate `sysinfo` for portable CPU, memory, disk, process, and system
+  details to reduce direct shell command usage.
+- Add AMD GPU telemetry through `rocm-smi`.
+- Add configurable warning thresholds.
+- Add config file support at `~/.config/healthstatus/config.toml`.
+- Document and test macOS support explicitly.
+- Add release automation with GitHub Releases and prebuilt binaries, for
+  example through `cargo-dist` or `release-plz`.
+- Add hardware-independent collector tests using mocked system data.
+- Add an animated GIF or short video of the live dashboard.
 
 ## Development
 
