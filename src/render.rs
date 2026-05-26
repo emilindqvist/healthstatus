@@ -118,6 +118,232 @@ pub fn render_sensors(data: &Metrics, gpu: &GpuTelemetry) -> String {
     out
 }
 
+pub fn render_status_live(data: &Metrics, width: usize, height: usize) -> String {
+    let mut lines = base_frame(data, "Status", 1, width);
+
+    push_title(&mut lines, "CPU");
+    lines.push(clip_line(
+        &format!(
+            "total {:>5.1}%  {}c/{}t  load {:.2} {:.2} {:.2}",
+            data.cpu.percent_total,
+            data.cpu.physical_cores.unwrap_or(data.cpu.logical_cores),
+            data.cpu.logical_cores,
+            data.cpu.load_avg.0,
+            data.cpu.load_avg.1,
+            data.cpu.load_avg.2
+        ),
+        width,
+    ));
+    for (chunk_idx, chunk) in data.cpu.percent_per_core.chunks(8).take(2).enumerate() {
+        let row = chunk
+            .iter()
+            .enumerate()
+            .map(|(idx, pct)| format!("c{:02} {:>4.1}%", chunk_idx * 8 + idx, pct))
+            .collect::<Vec<_>>()
+            .join("  ");
+        lines.push(clip_line(&row, width));
+    }
+
+    push_title(&mut lines, "Memory");
+    lines.push(clip_line(
+        &format!(
+            "RAM  {} {:>5.1}%  {} / {}",
+            bar(data.memory.ram_percent, bar_width(width)),
+            data.memory.ram_percent,
+            fmt_bytes(data.memory.ram_used as f64),
+            fmt_bytes(data.memory.ram_total as f64)
+        ),
+        width,
+    ));
+    lines.push(clip_line(
+        &format!(
+            "Swap {} {:>5.1}%  {} / {}",
+            bar(data.memory.swap_percent, bar_width(width)),
+            data.memory.swap_percent,
+            fmt_bytes(data.memory.swap_used as f64),
+            fmt_bytes(data.memory.swap_total as f64)
+        ),
+        width,
+    ));
+
+    push_title(&mut lines, "Disks");
+    if data.disks.is_empty() {
+        lines.push("no disks reported".to_string());
+    } else {
+        for disk in data.disks.iter().take(4) {
+            lines.push(clip_line(
+                &format!(
+                    "{:<16} {} {:>5.1}%  {} / {}",
+                    truncate_left(&disk.mount, 16),
+                    bar(disk.percent, 14),
+                    disk.percent,
+                    fmt_bytes(disk.used as f64),
+                    fmt_bytes(disk.total as f64)
+                ),
+                width,
+            ));
+        }
+    }
+
+    push_title(&mut lines, "Network");
+    if data.network.interfaces.is_empty() {
+        lines.push("no active interfaces".to_string());
+    } else {
+        for iface in data.network.interfaces.iter().take(4) {
+            lines.push(clip_line(
+                &format!(
+                    "{:<10} up {:>9}/s  down {:>9}/s",
+                    truncate_right(&iface.name, 10),
+                    fmt_bytes(iface.up_bps),
+                    fmt_bytes(iface.down_bps)
+                ),
+                width,
+            ));
+        }
+    }
+
+    push_title(&mut lines, "Top processes");
+    let reserved_for_battery_and_footer = 6;
+    let remaining = height
+        .saturating_sub(lines.len() + reserved_for_battery_and_footer)
+        .max(1);
+    for proc in data.processes.iter().take(remaining.min(8)) {
+        lines.push(clip_line(
+            &format!(
+                "{:>7} {:<24} {:>8}",
+                proc.pid,
+                truncate_right(&proc.name, 24),
+                fmt_bytes(proc.memory_bytes as f64)
+            ),
+            width,
+        ));
+    }
+
+    push_title(&mut lines, "Battery");
+    lines.push(clip_line(render_battery(data).trim_end(), width));
+    finish_frame(lines, data, width, height)
+}
+
+pub fn render_details_live(
+    data: &Metrics,
+    details: &SystemDetails,
+    width: usize,
+    height: usize,
+) -> String {
+    let mut lines = base_frame(data, "Details", 2, width);
+    let mut rows = vec![
+        (
+            "Distro",
+            details.distro.as_deref().unwrap_or("-").to_string(),
+        ),
+        ("Kernel", details.kernel.clone()),
+        ("Arch", details.arch.clone()),
+        (
+            "CPU",
+            details.cpu_model.as_deref().unwrap_or("-").to_string(),
+        ),
+        ("WSL RAM", fmt_bytes(details.vm_ram_total as f64)),
+    ];
+    rows.extend(
+        details
+            .windows
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.clone())),
+    );
+    push_title(&mut lines, "Host");
+    push_kv_rows(&mut lines, &rows, width, height.saturating_sub(8));
+
+    push_title(&mut lines, "Wi-Fi");
+    if details.wifi.is_empty() {
+        lines.push("no Wi-Fi interface".to_string());
+    } else {
+        let wifi = details
+            .wifi
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.clone()))
+            .collect::<Vec<_>>();
+        push_kv_rows(&mut lines, &wifi, width, 6);
+    }
+    finish_frame(lines, data, width, height)
+}
+
+pub fn render_sensors_live(
+    data: &Metrics,
+    gpu: &GpuTelemetry,
+    width: usize,
+    height: usize,
+) -> String {
+    let mut lines = base_frame(data, "Sensors", 3, width);
+    push_title(&mut lines, "GPU");
+    if let Some(g) = gpu.gpus.first() {
+        lines.push(clip_line(&g.name, width));
+        let vram = match (g.vram_used_mib, g.vram_total_mib) {
+            (Some(used), Some(total)) => {
+                format!("{:.1} / {:.1} GiB", used / 1024.0, total / 1024.0)
+            }
+            _ => "-".to_string(),
+        };
+        let rows = vec![
+            ("Temp", opt(g.temp_c, " C", 0)),
+            ("GPU util", opt(g.gpu_util_pct, "%", 0)),
+            ("Mem I/O", opt(g.mem_util_pct, "%", 0)),
+            ("VRAM", vram),
+            ("Fan", opt(g.fan_pct, "%", 0)),
+            ("Power", opt(g.power_w, " W", 1)),
+            ("Core clock", opt(g.clock_core_mhz, " MHz", 0)),
+            ("Mem clock", opt(g.clock_mem_mhz, " MHz", 0)),
+        ];
+        push_kv_rows(&mut lines, &rows, width, 8);
+    } else {
+        lines.push(clip_line(
+            &format!(
+                "GPU telemetry unavailable{}",
+                gpu.error
+                    .as_ref()
+                    .filter(|e| !e.is_empty())
+                    .map(|e| format!(": {e}"))
+                    .unwrap_or_default()
+            ),
+            width,
+        ));
+    }
+
+    push_title(&mut lines, "CPU / board sensors");
+    if data.temperatures.is_empty() {
+        lines.push("no sensors available".to_string());
+    } else {
+        for temp in data.temperatures.iter().take(4) {
+            lines.push(clip_line(
+                &format!(
+                    "{} {:>5.1} C",
+                    truncate_right(&temp.label, 28),
+                    temp.current
+                ),
+                width,
+            ));
+        }
+    }
+
+    push_title(&mut lines, "GPU processes");
+    if gpu.processes.is_empty() {
+        lines.push("no compute processes visible".to_string());
+    } else {
+        let room = height.saturating_sub(lines.len() + 3).max(1);
+        for proc in gpu.processes.iter().take(room.min(6)) {
+            lines.push(clip_line(
+                &format!(
+                    "{:>7} {:<28} {:>8}",
+                    proc.pid,
+                    truncate_right(&proc.name, 28),
+                    opt(proc.mem_mib, " MiB", 0)
+                ),
+                width,
+            ));
+        }
+    }
+    finish_frame(lines, data, width, height)
+}
+
 pub fn render_json(data: &Metrics, include_details: bool, include_sensors: bool) -> String {
     let mut parts = vec![
         format!(
@@ -296,6 +522,67 @@ fn render_battery(data: &Metrics) -> String {
     }
 }
 
+fn base_frame(data: &Metrics, page: &str, page_num: usize, width: usize) -> Vec<String> {
+    vec![
+        clip_line(
+            &format!(
+                "healthstatus  {} ({}/3)  {}@{}",
+                page, page_num, data.host.user, data.host.hostname
+            ),
+            width,
+        ),
+        "-".repeat(width.max(1)),
+    ]
+}
+
+fn finish_frame(mut lines: Vec<String>, data: &Metrics, width: usize, height: usize) -> String {
+    let footer = vec![
+        "-".repeat(width.max(1)),
+        clip_line(
+            &format!(
+                "Uptime: {} | OS: {} | Arch: {}",
+                fmt_duration(data.host.uptime_s),
+                data.host.distro.as_deref().unwrap_or(&data.host.os),
+                data.host.arch
+            ),
+            width,
+        ),
+        clip_line(
+            "[1] Status  [2] Details  [3] Sensors  [tab] next  [q] quit",
+            width,
+        ),
+    ];
+
+    let max_body = height.saturating_sub(footer.len()).max(1);
+    if lines.len() > max_body {
+        lines.truncate(max_body);
+    }
+    while lines.len() < max_body {
+        lines.push(String::new());
+    }
+    lines.extend(footer);
+    lines
+        .into_iter()
+        .take(height.max(1))
+        .map(|line| clip_line(&line, width))
+        .collect::<Vec<_>>()
+        .join("\r\n")
+}
+
+fn push_title(lines: &mut Vec<String>, title: &str) {
+    lines.push(String::new());
+    lines.push(format!("== {title} =="));
+}
+
+fn push_kv_rows(lines: &mut Vec<String>, rows: &[(&str, String)], width: usize, max_rows: usize) {
+    for (key, value) in rows.iter().take(max_rows) {
+        lines.push(clip_line(
+            &format!("{:<12} {}", truncate_right(key, 12), value),
+            width,
+        ));
+    }
+}
+
 fn header(data: &Metrics, page: &str, page_num: usize) -> String {
     format!(
         "healthstatus | {}@{} | {} ({}/3)\n{}\n",
@@ -357,6 +644,10 @@ fn bar(pct: f64, width: usize) -> String {
     )
 }
 
+fn bar_width(width: usize) -> usize {
+    width.saturating_sub(42).clamp(8, 24)
+}
+
 fn opt(value: Option<f64>, unit: &str, digits: usize) -> String {
     match value {
         Some(v) if digits == 0 => format!("{:.0}{unit}", v),
@@ -387,6 +678,17 @@ fn truncate_right(value: &str, max: usize) -> String {
     } else {
         format!("{}~", value.chars().take(max - 1).collect::<String>())
     }
+}
+
+fn clip_line(value: &str, max: usize) -> String {
+    if max == 0 {
+        return String::new();
+    }
+    let mut out = String::new();
+    for ch in value.chars().take(max) {
+        out.push(ch);
+    }
+    out
 }
 
 fn json_opt(value: Option<&str>) -> String {

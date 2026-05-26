@@ -5,7 +5,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::collectors::{collect_all, gpu_telemetry, system_details, NetSnapshot, SystemDetails};
-use crate::render::{render_details, render_sensors, render_status};
+use crate::render::{render_details_live, render_sensors_live, render_status_live};
 
 pub fn run(interval: f64) {
     let interval = Duration::from_secs_f64(interval);
@@ -26,10 +26,11 @@ pub fn run(interval: f64) {
     let mut cached_details: Option<SystemDetails> = None;
     let mut details_fetched = Instant::now() - Duration::from_secs(60);
 
-    print!("\x1b[?1049h\x1b[2J\x1b[H");
+    print!("\x1b[?1049h\x1b[?25l\x1b[2J\x1b[H");
     let _ = io::stdout().flush();
 
     loop {
+        let (width, height) = terminal_size();
         let data = collect_all(&mut prev_net);
         let frame = match page {
             2 => {
@@ -37,12 +38,17 @@ pub fn run(interval: f64) {
                     cached_details = Some(system_details());
                     details_fetched = Instant::now();
                 }
-                render_details(&data, cached_details.as_ref().expect("details cached"))
+                render_details_live(
+                    &data,
+                    cached_details.as_ref().expect("details cached"),
+                    width,
+                    height,
+                )
             }
-            3 => render_sensors(&data, &gpu_telemetry()),
-            _ => render_status(&data),
+            3 => render_sensors_live(&data, &gpu_telemetry(), width, height),
+            _ => render_status_live(&data, width, height),
         };
-        print!("\x1b[2J\x1b[H{frame}");
+        print!("\x1b[H{frame}\x1b[J");
         let _ = io::stdout().flush();
 
         let deadline = Instant::now() + interval;
@@ -75,6 +81,26 @@ pub fn run(interval: f64) {
     }
 }
 
+fn terminal_size() -> (usize, usize) {
+    let output = Command::new("sh")
+        .args(["-c", "stty size 2>/dev/null"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default();
+    let mut parts = output.split_whitespace();
+    let rows = parts
+        .next()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(30);
+    let cols = parts
+        .next()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(100);
+    (cols.max(40), rows.max(12))
+}
+
 struct RawMode;
 
 impl RawMode {
@@ -91,7 +117,7 @@ impl Drop for RawMode {
         let _ = Command::new("sh")
             .args(["-c", "stty sane 2>/dev/null"])
             .status();
-        print!("\x1b[?1049l");
+        print!("\x1b[?25h\x1b[?1049l");
         let _ = io::stdout().flush();
     }
 }
