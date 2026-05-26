@@ -7,16 +7,22 @@ details, and NVIDIA GPU telemetry from a single `healthstatus` command.
 
 ## Install
 
-From the repo root:
+From crates.io:
 
 ```bash
-cargo install --path .
+cargo install healthstatus
 ```
 
 From GitHub:
 
 ```bash
 cargo install --git https://github.com/emilindqvist/healthstatus.git
+```
+
+From a local checkout:
+
+```bash
+cargo install --path .
 ```
 
 For local development:
