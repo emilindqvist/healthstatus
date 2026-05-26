@@ -60,6 +60,8 @@ q      Quit
 
 ![healthstatus sensors dashboard](docs/sensors.svg)
 
+Screenshots use anonymized sample data.
+
 ## WSL notes
 
 - CPU and RAM reflect the WSL2 VM, not the full Windows host.

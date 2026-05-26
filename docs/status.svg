@@ -26,8 +26,8 @@
 
   <rect class="panel" x="24" y="24" width="1232" height="56" rx="8"/>
   <text class="title cyan" x="48" y="58">healthstatus</text>
-  <text class="text" x="176" y="58">emil@DESKTOP-RS48ESJ</text>
-  <text class="dim" x="420" y="58">Ubuntu 24.04.4 LTS</text>
+  <text class="text" x="176" y="58">user@workstation</text>
+  <text class="dim" x="420" y="58">Linux</text>
   <text class="dim" x="640" y="58">x86_64</text>
   <text class="dim" x="760" y="58">uptime 5h 58m</text>
   <text class="title" x="1060" y="58">Status (1/3)</text>
@@ -67,8 +67,8 @@
   <text class="title" x="48" y="407">Disks</text>
   <g class="text" transform="translate(48 440)">
     <text y="0">/</text><rect class="bar-bg" x="210" y="-14" width="270" height="16" rx="4"/><rect class="bar-green" x="210" y="-14" width="4" height="16" rx="4"/><text x="510" y="0">1.3%</text><text class="dim" x="610" y="0">12.9G / 1006.9G</text>
-    <text y="32">/usr/lib/wsl/drivers</text><rect class="bar-bg" x="210" y="18" width="270" height="16" rx="4"/><rect class="bar-yellow" x="210" y="18" width="161" height="16" rx="4"/><text x="510" y="32">59.5%</text><text class="dim" x="610" y="32">276.4G / 464.8G</text>
-    <text y="64">/mnt/c</text><rect class="bar-bg" x="210" y="50" width="270" height="16" rx="4"/><rect class="bar-yellow" x="210" y="50" width="161" height="16" rx="4"/><text x="510" y="64">59.5%</text><text class="dim" x="610" y="64">276.4G / 464.8G</text>
+    <text y="32">/data</text><rect class="bar-bg" x="210" y="18" width="270" height="16" rx="4"/><rect class="bar-yellow" x="210" y="18" width="161" height="16" rx="4"/><text x="510" y="32">59.5%</text><text class="dim" x="610" y="32">276.4G / 464.8G</text>
+    <text y="64">/backup</text><rect class="bar-bg" x="210" y="50" width="270" height="16" rx="4"/><rect class="bar-yellow" x="210" y="50" width="161" height="16" rx="4"/><text x="510" y="64">59.5%</text><text class="dim" x="610" y="64">276.4G / 464.8G</text>
   </g>
 
   <rect class="panel panel-green" x="24" y="526" width="560" height="142" rx="8"/>
@@ -79,8 +79,8 @@
   <rect class="panel panel-red" x="604" y="526" width="652" height="142" rx="8"/>
   <text class="title red" x="628" y="559">Top processes</text>
   <text class="dim" x="628" y="594">pid</text><text class="dim" x="720" y="594">process</text><text class="dim" x="1030" y="594">rss</text>
-  <text class="text" x="628" y="626">18512</text><text class="text" x="720" y="626">codex</text><text class="text" x="1030" y="626">165.4M</text>
-  <text class="text" x="628" y="654">27880</text><text class="text" x="720" y="654">healthstatus</text><text class="text" x="1030" y="654">23.4M</text>
+  <text class="text" x="628" y="626">1234</text><text class="text" x="720" y="626">editor</text><text class="text" x="1030" y="626">165.4M</text>
+  <text class="text" x="628" y="654">2345</text><text class="text" x="720" y="654">healthstatus</text><text class="text" x="1030" y="654">23.4M</text>
 
   <rect class="panel" x="24" y="690" width="1232" height="46" rx="8"/>
   <text class="text" x="48" y="720">[1] Status   [2] Details   [3] Sensors   [tab] next   [q] quit</text>
