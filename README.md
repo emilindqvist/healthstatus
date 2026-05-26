@@ -56,10 +56,11 @@ q      Quit
 
 ## Screenshots
 
-![healthstatus status dashboard](docs/status.svg)
+![healthstatus status dashboard](docs/image.png)
 
-![healthstatus sensors dashboard](docs/sensors.svg)
+![healthstatus details dashboard](docs/45d54616-02cf-415e-abc8-7763441c9aa3.png)
 
+![healthstatus sensors dashboard](docs/123123123123.png)
 
 ## WSL notes
 
