@@ -62,6 +62,21 @@ Command name: `healthstatus`
 - On WSL, battery, Windows system details, and Wi-Fi details are optional and
   use `powershell.exe` and `netsh.exe` when available.
 
+## Platform support
+
+healthstatus is currently Linux/WSL-first.
+
+| Platform | Status | Notes |
+| --- | --- | --- |
+| Linux | Supported | Main target. Uses Linux `/proc`, `/sys`, and common system tools. |
+| WSL2 | Supported | Shows WSL VM metrics and can read some Windows host details when Windows tools are available. |
+| Windows | Not supported yet | Native Windows support needs portable collectors instead of Linux `/proc` and `/sys` reads. |
+| macOS | Not supported yet | Basic support should be possible after replacing Linux-specific collectors. |
+| BSD | Not supported yet | Not tested. |
+
+The roadmap includes evaluating `sysinfo` for portable CPU, memory, disk,
+process, and system details across more operating systems.
+
 ## Use
 
 ```bash

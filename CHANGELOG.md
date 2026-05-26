@@ -9,6 +9,7 @@ The format follows Keep a Changelog, and this project uses semantic versioning.
 ### Added
 
 - README dependency notes for optional runtime tools.
+- README platform support matrix.
 - README metric explanations, architecture overview, and project roadmap.
 - CSV metrics logging with `--log <FILE>`.
 - High-usage warnings for CPU, RAM, disks, and temperatures.
