@@ -13,6 +13,12 @@ From the repo root:
 cargo install --path .
 ```
 
+From GitHub:
+
+```bash
+cargo install --git https://github.com/emilindqvist/healthstatus.git
+```
+
 For local development:
 
 ```bash
